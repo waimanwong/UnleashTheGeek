@@ -65,6 +65,11 @@ class Game
             }
         }
 
+        ComputeRadarPositions();
+    }
+
+    private void ComputeRadarPositions()
+    {
         RadarTargetPosition = new Queue<Coord>();
         int targetX = 1;
         while (targetX < Width)
@@ -80,9 +85,7 @@ class Game
 
             targetX += 5;
         }
-
     }
-
 }
 
 class Coord
@@ -239,6 +242,11 @@ class AI
     private string GoDigRadar(Robot robot)
     {
         Coord targetPosition = _game.RadarTargetPosition.Peek();
+
+        if(_game.RadarTargetPosition.Count == 0)
+        {
+            return Robot.Wait("No more radar to dig");
+        }
 
         if (robot.Pos.Distance(targetPosition) <= 1)
         {

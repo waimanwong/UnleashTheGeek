@@ -47,6 +47,8 @@ class Game
 
     public Queue<Coord> RadarTargetPosition { get; private set; }
 
+    public Queue<Coord>[] Missions { get; private set; }
+
     public Game(int width, int height)
     {
         Width = width;
@@ -57,15 +59,76 @@ class Game
         Radars = new List<Entity>();
         Traps = new List<Entity>();
 
-        for (int x = 0; x < width; ++x)
+        InitializeCellContent();
+        InitializeMissions();
+        ComputeRadarPositions();
+    }
+
+    private void InitializeCellContent()
+    {
+        for (int x = 0; x < Width; ++x)
         {
-            for (int y = 0; y < height; ++y)
+            for (int y = 0; y < Height; ++y)
             {
                 Cells[x, y] = new Cell();
             }
         }
+    }
 
-        ComputeRadarPositions();
+    public IReadOnlyList<Coord> GetRevealedOrePositions()
+    {
+        List<Coord> coordsWithOre = new List<Coord>();
+
+        for (int x = 0; x < Width; ++x)
+        {
+            for (int y = 0; y < Height; ++y)
+            {
+                if(Cells[x, y].Ore > 0)
+                {
+                    coordsWithOre.Add(new Coord(x,y));
+                }
+            }
+        }
+
+        return coordsWithOre;
+    }
+
+    public void AssignMissions(IReadOnlyList<Coord> orePositions)
+    {
+        for(int i=0; i < orePositions.Count; i++)
+        {
+            var currentOrePosition = orePositions[i];
+
+            if (IsAlreadyAssignedToAMission(currentOrePosition))
+            {
+                //Ignore
+            }
+            else
+            {
+                var selectedMissionIndex = i % Missions.Length;
+                Missions[selectedMissionIndex].Enqueue(currentOrePosition);
+            }
+        }
+    }
+
+    private bool IsAlreadyAssignedToAMission(Coord orePosition)
+    {
+        foreach(var mission in Missions)
+        {
+            if (mission.Contains(orePosition))
+                return true;
+        }
+        return false;
+    }
+
+    private void InitializeMissions()
+    {
+        Missions = new Queue<Coord>[5];
+
+        for(int i = 0; i < 5; i++)
+        {
+            Missions[i] = new Queue<Coord>();
+        }
     }
 
     private void ComputeRadarPositions()
@@ -184,33 +247,57 @@ class AI
 
     public string[] GetActions()
     {   
-        foreach(var robot in _game.MyRobots )
-        {
-            Player.Debug(robot.ToString());
-        }
-
         var actions = new List<string>();
 
         //Robot 0: Get radars and dig anywhere
         actions.Add(DigRadars(_game.MyRobots[0]));
 
-
-
-        //All others wait
+        //All others wait for Amadeusium ore to be revealed
+        var orePositions = _game.GetRevealedOrePositions();
+        _game.AssignMissions(orePositions);
+       
         for (int i = 1; i < 5; i++)
         {
-            // To debug: Console.Error.WriteLine("Debug messages...");
-
-            Robot robot = _game.MyRobots[i];
-            actions.Add( Robot.Wait("C# Starter"));
-
-            // Implement action selection logic here.
-
-            // WAIT|MOVE x y|REQUEST item|DIG x y
-           
+            actions.Add(ExecuteMission(_game.Missions[i], _game.MyRobots[i]));
         }
 
         return actions.ToArray();
+    }
+
+    private string ExecuteMission(Queue<Coord> mission, Robot robot)
+    {
+        if (robot.Item == EntityType.ORE)
+        {
+            return GoToHeadquarters(robot);
+        }
+        else
+        {
+            return GoGetTheOreAt(mission, robot);
+        }
+    }
+
+    private string GoGetTheOreAt(Queue<Coord> mission, Robot robot )
+    {
+        //Holding nothing
+        if (mission.Count == 0)
+        {
+            //No mission
+            return Robot.Wait("waiting for something");
+        }
+
+        var orePosition = mission.Peek();
+
+        if (robot.Pos.Distance(orePosition) <= 1)
+        {
+            mission.Dequeue();
+
+            return Robot.Dig(orePosition);
+        }
+        else
+        {
+            return Robot.Move(orePosition);
+        }
+       
     }
 
     private string DigRadars(Robot robot)
@@ -235,18 +322,23 @@ class AI
         }
         else
         {
-            return Robot.Move(new Coord(0, robot.Pos.Y));
+            return GoToHeadquarters(robot);
         }
+    }
+
+    private string GoToHeadquarters(Robot robot)
+    {
+        return Robot.Move(new Coord(0, robot.Pos.Y));
     }
 
     private string GoDigRadar(Robot robot)
     {
-        Coord targetPosition = _game.RadarTargetPosition.Peek();
-
         if(_game.RadarTargetPosition.Count == 0)
         {
             return Robot.Wait("No more radar to dig");
         }
+
+        Coord targetPosition = _game.RadarTargetPosition.Peek();
 
         if (robot.Pos.Distance(targetPosition) <= 1)
         {

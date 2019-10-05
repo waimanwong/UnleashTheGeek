@@ -85,9 +85,9 @@ class OnGoingMissions
     {
         orePosition = null;
         
-        var revealedOrePositions = game
-            .GetRevealedOrePositions()
-            .OrderBy(p => p.Distance(robot.Pos))
+        var revealedOreCells = game
+            .GetRevealedOreCells()
+            .OrderBy(cell => cell.Item1.Distance(robot.Pos))
             .ToList();
 
         var alreadyAsssignedPositions = _missions
@@ -95,9 +95,14 @@ class OnGoingMissions
             .Select(x => x.OrePosition)
             .ToArray();
 
-        foreach(var possiblePosition in revealedOrePositions)
+        foreach(var oreCell in revealedOreCells)
         {
-            if(alreadyAsssignedPositions.Any(p => p.Distance(possiblePosition) == 0))
+            var possiblePosition = oreCell.Item1;
+            var oreCount = oreCell.Item2.Ore;
+            var assignedRobotCount = alreadyAsssignedPositions.Count(p => p.Distance(possiblePosition) == 0);
+            var possiblePositionHasTrap = game.Traps.Any(trap => trap.Pos.Distance(possiblePosition) == 0);
+
+            if (assignedRobotCount == oreCount || possiblePositionHasTrap)
             {
                 //Already assigned
             }
@@ -137,11 +142,7 @@ class MoveMission : Mission
 
     public override bool IsCompleted(Robot myRobot, Game game)
     {
-        var isCompleted = myRobot.Pos.Distance(_targetPosition) == 0;
-
-        Player.Debug($"Move Mission of {myRobot.Id} is completed:{isCompleted}");
-
-        return isCompleted;
+        return myRobot.Pos.Distance(_targetPosition) == 0;
     }
 
     public override string ToString()
@@ -174,6 +175,12 @@ class DigOreMission : Mission
         }
         else
         {
+            bool trapIsAvailable = game.TrapCooldown == 0;
+            if (robot.IsAtHeadquerters() && trapIsAvailable)
+            {
+                return Robot.Request(EntityType.TRAP);
+            }
+
             return Robot.Move(OrePosition);
         }
     }
@@ -181,8 +188,10 @@ class DigOreMission : Mission
     public override bool IsCompleted(Robot robot, Game game)
     {
         bool noMoreOre = _justDig == true && robot.Item == EntityType.NONE;
+        bool positionHasTrap = game.Traps.Any(trap => trap.Pos.Distance(OrePosition) == 0);
 
-        return robot.IsAtHeadquerters() || 
+        return robot.IsAtHeadquerters() ||
+            positionHasTrap ||
             noMoreOre;
     }
 
@@ -252,7 +261,10 @@ class DigRadarMission: Mission
 
     public override bool IsCompleted(Robot myRobot, Game game)
     {
-        return gotRadar && myRobot.Item == EntityType.NONE;
+        var positionHasTrap = game.Traps.Any(trap => trap.Pos.Distance(TargetPosition) == 0);
+
+        return (gotRadar && myRobot.Item == EntityType.NONE) || 
+            positionHasTrap;
     }
 
     public override string ToString()
@@ -302,9 +314,9 @@ class Game
         }
     }
 
-    public IReadOnlyList<Coord> GetRevealedOrePositions()
+    public IReadOnlyList<Tuple<Coord, Cell>> GetRevealedOreCells()
     {
-        List<Coord> coordsWithOre = new List<Coord>();
+        var cellsWithOre = new List<Tuple<Coord, Cell>>();
 
         for (int x = 0; x < Width; ++x)
         {
@@ -312,12 +324,12 @@ class Game
             {
                 if (Cells[x, y].Ore > 0)
                 {
-                    coordsWithOre.Add(new Coord(x, y));
+                    cellsWithOre.Add(new Tuple<Coord, Cell>(new Coord(x,y), Cells[x, y]));
                 }
             }
         }
 
-        return coordsWithOre;
+        return cellsWithOre;
     }
 
     public Coord GetRecommendRadarPosition()
@@ -327,7 +339,10 @@ class Game
 
         foreach (var recommendedPosition in recommendedRadarPositions)
         {
-            if(myRadarPositions.Any(p => p.Distance(recommendedPosition) == 0))
+            var positionHasAlreadyARadar = myRadarPositions.Any(p => p.Distance(recommendedPosition) == 0);
+            var positionHasATrap = Traps.Any(trap => trap.Pos.Distance(recommendedPosition) == 0);
+
+            if (positionHasAlreadyARadar || positionHasATrap)
             {
                 //Go to next
             }

@@ -64,7 +64,9 @@ class OnGoingMissions
         {
             if(game.RadarCooldown == 0)
             {
-                _missions[myRobot.Id] = new DigRadar(new Coord(5,3));
+                var radarPosition = game.GetRecommendRadarPosition();
+
+                _missions[myRobot.Id] = new DigRadar(radarPosition);
             }
             else
             {
@@ -83,9 +85,9 @@ class OnGoingMissions
 
 abstract class Mission
 {
-    public abstract string GetAction(Robot robot);
+    public abstract string GetAction(Robot robot, Game game);
 
-    public abstract bool IsCompleted(Robot myRobot);
+    public abstract bool IsCompleted(Robot robot);
     
 }
 
@@ -98,14 +100,18 @@ class Move : Mission
         _targetPosition = targetPosition;
     }
 
-    public override string GetAction(Robot robot)
+    public override string GetAction(Robot robot, Game game)
     {
         return Robot.Move(_targetPosition);
     }
 
     public override bool IsCompleted(Robot myRobot)
     {
-        return myRobot.Pos == _targetPosition;
+        var isCompleted = myRobot.Pos.Distance(_targetPosition) == 0;
+
+        Player.Debug($"Move Mission of {myRobot.Id} is completed:{isCompleted}");
+
+        return isCompleted;
     }
 }
 
@@ -119,12 +125,12 @@ class DigRadar: Mission
         _targetPosition = targetPosition;
     }
 
-    public override string GetAction(Robot robot)
+    public override string GetAction(Robot robot, Game game)
     {
         if (robot.Item == EntityType.NONE)
         {
             //Go get a radar
-            return GoGetRadar(robot);
+            return GoGetRadar(robot, game);
         }
         else
         {
@@ -135,10 +141,11 @@ class DigRadar: Mission
         }
     }
 
-    private string GoGetRadar(Robot robot)
+    private string GoGetRadar(Robot robot, Game game)
     {
         if (robot.Pos.X == 0)
         {
+            game.RadarCooldown = 4;
             return Robot.Request(EntityType.RADAR);
         }
         else
@@ -166,7 +173,11 @@ class DigRadar: Mission
 
     public override bool IsCompleted(Robot myRobot)
     {
-        return gotRadar && myRobot.Item == EntityType.NONE;
+        var isCompleted = gotRadar && myRobot.Item == EntityType.NONE;
+
+        Player.Debug($"DigRadar Mission of {myRobot.Id} is completed:{isCompleted}");
+
+        return isCompleted;
     }
 }
 
@@ -211,6 +222,40 @@ class Game
         }
     }
 
+    public Coord GetRecommendRadarPosition()
+    {
+        var recommendedRadarPositions = GetRecommendedRadarPositions();
+        var myRadarPositions = this.Radars.Select(radar => radar.Pos).ToList();
+
+        foreach (var recommendedPosition in recommendedRadarPositions)
+        {
+            if(myRadarPositions.Any(p => p.Distance(recommendedPosition) == 0))
+            {
+                //Go to next
+            }
+            else
+            {
+                return recommendedPosition;
+            }
+        }
+
+        return recommendedRadarPositions[0];
+    }
+
+    private Coord[] GetRecommendedRadarPositions()
+    {
+        return new List<Coord>
+        {
+            new Coord(9, 7),
+            new Coord(5, 3),
+            new Coord(5, 11),
+            new Coord(13,3),
+            new Coord(13,11),
+            new Coord(17,7),
+            new Coord(21,3),
+            new Coord(21,11)
+        }.ToArray();
+    }
 }
 
 class Coord
@@ -328,7 +373,7 @@ class AI
                 onGoingMission = _onGoingMissions.AssignMission(myRobot, _game);
             }
 
-            actions.Add(onGoingMission.GetAction(myRobot));
+            actions.Add(onGoingMission.GetAction(myRobot, _game));
 
         }
 

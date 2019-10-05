@@ -175,11 +175,11 @@ class DigOreMission : Mission
         }
         else
         {
-            bool trapIsAvailable = game.TrapCooldown == 0;
-            if (robot.IsAtHeadquerters() && trapIsAvailable)
-            {
-                return Robot.Request(EntityType.TRAP);
-            }
+            //bool trapIsAvailable = game.TrapCooldown == 0;
+            //if (robot.IsAtHeadquerters() && trapIsAvailable)
+            //{
+            //    return Robot.Request(EntityType.TRAP);
+            //}
 
             return Robot.Move(OrePosition);
         }

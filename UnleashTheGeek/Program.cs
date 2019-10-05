@@ -28,6 +28,148 @@ class Cell
     }
 }
 
+class OnGoingMissions
+{
+    /// <summary>
+    /// Mission by robot id
+    /// </summary>
+    private Dictionary<int, Mission> _missions;
+
+    public OnGoingMissions()
+    {
+        _missions = new Dictionary<int, Mission>();
+    }
+
+    public bool TryGetMissionOf(Robot myRobot, out Mission onGoingMission)
+    {
+        var hasMission = _missions.TryGetValue(myRobot.Id, out onGoingMission);
+
+        if(hasMission == false)
+        {
+            return false;
+        }
+
+        if(onGoingMission.IsCompleted(myRobot))
+        {
+            onGoingMission = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    public Mission AssignMission(Robot myRobot, Game game)
+    {
+        if(myRobot.IsAtHeadquerters())
+        {
+            if(game.RadarCooldown == 0)
+            {
+                _missions[myRobot.Id] = new DigRadar(new Coord(5,3));
+            }
+            else
+            {
+                _missions[myRobot.Id] = new Move(new Coord(5, 3));
+            }
+        }
+        else
+        {
+            _missions[myRobot.Id] = new Move(new Coord(0, myRobot.Pos.Y));
+        }
+
+        return _missions[myRobot.Id];
+    }
+
+}
+
+abstract class Mission
+{
+    public abstract string GetAction(Robot robot);
+
+    public abstract bool IsCompleted(Robot myRobot);
+    
+}
+
+class Move : Mission
+{
+    private readonly Coord _targetPosition;
+
+    public Move(Coord targetPosition)
+    {
+        _targetPosition = targetPosition;
+    }
+
+    public override string GetAction(Robot robot)
+    {
+        return Robot.Move(_targetPosition);
+    }
+
+    public override bool IsCompleted(Robot myRobot)
+    {
+        return myRobot.Pos == _targetPosition;
+    }
+}
+
+class DigRadar: Mission
+{
+    private readonly Coord _targetPosition;
+    private bool gotRadar;
+
+    public DigRadar(Coord targetPosition)
+    {
+        _targetPosition = targetPosition;
+    }
+
+    public override string GetAction(Robot robot)
+    {
+        if (robot.Item == EntityType.NONE)
+        {
+            //Go get a radar
+            return GoGetRadar(robot);
+        }
+        else
+        {
+            gotRadar = true;
+
+            //Go dig radar
+            return GoDigRadar(robot);
+        }
+    }
+
+    private string GoGetRadar(Robot robot)
+    {
+        if (robot.Pos.X == 0)
+        {
+            return Robot.Request(EntityType.RADAR);
+        }
+        else
+        {
+            return GoToHeadquarters(robot);
+        }
+    }
+
+    private string GoToHeadquarters(Robot robot)
+    {
+        return Robot.Move(new Coord(0, robot.Pos.Y));
+    }
+
+    private string GoDigRadar(Robot robot)
+    {
+        if (robot.Pos.Distance(_targetPosition) <= 1)
+        {
+            return Robot.Dig(_targetPosition);
+        }
+        else
+        {
+            return Robot.Move(_targetPosition);
+        }
+    }
+
+    public override bool IsCompleted(Robot myRobot)
+    {
+        return gotRadar && myRobot.Item == EntityType.NONE;
+    }
+}
+
 class Game
 {
     // Given at startup
@@ -45,10 +187,6 @@ class Game
     public List<Entity> Radars { get; set; }
     public List<Entity> Traps { get; set; }
 
-    public Queue<Coord> RadarTargetPosition { get; private set; }
-
-    public Queue<Coord>[] Missions { get; private set; }
-
     public Game(int width, int height)
     {
         Width = width;
@@ -60,8 +198,6 @@ class Game
         Traps = new List<Entity>();
 
         InitializeCellContent();
-        InitializeMissions();
-        ComputeRadarPositions();
     }
 
     private void InitializeCellContent()
@@ -75,82 +211,6 @@ class Game
         }
     }
 
-    public IReadOnlyList<Coord> GetRevealedOrePositions()
-    {
-        List<Coord> coordsWithOre = new List<Coord>();
-
-        for (int x = 0; x < Width; ++x)
-        {
-            for (int y = 0; y < Height; ++y)
-            {
-                if(Cells[x, y].Ore > 0)
-                {
-                    coordsWithOre.Add(new Coord(x,y));
-                }
-            }
-        }
-
-        return coordsWithOre;
-    }
-
-    public void AssignMissions()
-    {
-        var orePositions = GetRevealedOrePositions();
-
-        for (int i=0; i < orePositions.Count; i++)
-        {
-            var currentOrePosition = orePositions[i];
-
-            if (IsAlreadyAssignedToAMission(currentOrePosition))
-            {
-                //Ignore
-            }
-            else
-            {
-                var selectedMissionIndex = i % (Missions.Length - 1);
-                Missions[selectedMissionIndex + 1].Enqueue(currentOrePosition);
-            }
-        }
-    }
-
-    private bool IsAlreadyAssignedToAMission(Coord orePosition)
-    {
-        foreach(var mission in Missions)
-        {
-            if (mission.Contains(orePosition))
-                return true;
-        }
-        return false;
-    }
-
-    private void InitializeMissions()
-    {
-        Missions = new Queue<Coord>[5];
-
-        for(int i = 0; i < 5; i++)
-        {
-            Missions[i] = new Queue<Coord>();
-        }
-    }
-
-    private void ComputeRadarPositions()
-    {
-        RadarTargetPosition = new Queue<Coord>();
-        int targetX = 6;
-        while (targetX < Width)
-        {
-            int targetY = 4;
-
-            while (targetY < Height)
-            {
-                RadarTargetPosition.Enqueue(new Coord(targetX, targetY));
-
-                targetY += 5;
-            }
-
-            targetX += 5;
-        }
-    }
 }
 
 class Coord
@@ -236,122 +296,45 @@ class Robot : Entity
     {
         return $"REQUEST {item.ToString()} {message}";
     }
+
+    public bool IsAtHeadquerters()
+    {
+        return this.Pos.X == 0;
+    }
 }
 
 class AI
 {
     private readonly Game _game;
+    private readonly OnGoingMissions _onGoingMissions;
 
-    public AI(Game game)
+    public AI(Game game, OnGoingMissions onGoingMissions)
     {
         _game = game;
+        _onGoingMissions = onGoingMissions;
     }
 
     public string[] GetActions()
     {   
         var actions = new List<string>();
 
-        //Robot 0: Get radars and dig anywhere
-        actions.Add(DigRadars(_game.MyRobots[0]));
-
-        //All others wait for Amadeusium ore to be revealed
-        _game.AssignMissions();
-       
-        for (int i = 1; i < 5; i++)
+        foreach(var myRobot in _game.MyRobots)
         {
-            actions.Add(ExecuteMission(_game.Missions[i], _game.MyRobots[i]));
+            Mission onGoingMission;
+            var hasMission = _onGoingMissions.TryGetMissionOf(myRobot, out onGoingMission);
+
+            if(hasMission == false)
+            {
+                onGoingMission = _onGoingMissions.AssignMission(myRobot, _game);
+            }
+
+            actions.Add(onGoingMission.GetAction(myRobot));
+
         }
 
         return actions.ToArray();
     }
 
-    private string ExecuteMission(Queue<Coord> mission, Robot robot)
-    {
-        if (robot.Item == EntityType.ORE)
-        {
-            return GoToHeadquarters(robot);
-        }
-        else
-        {
-            return GoGetTheOreAt(mission, robot);
-        }
-    }
-
-    private string GoGetTheOreAt(Queue<Coord> mission, Robot robot )
-    {
-        //Holding nothing
-        if (mission.Count == 0)
-        {
-            //No mission
-            return Robot.Wait("waiting for something");
-        }
-
-        var orePosition = mission.Peek();
-
-        if (robot.Pos.Distance(orePosition) <= 1)
-        {
-            mission.Dequeue();
-
-            return Robot.Dig(orePosition);
-        }
-        else
-        {
-            return Robot.Move(orePosition);
-        }
-       
-    }
-
-    private string DigRadars(Robot robot)
-    {
-        if (robot.Item == EntityType.NONE)
-        {
-            //Go get a radar
-            return GoGetRadar(robot);
-        }
-        else
-        {
-            //Go dig radar
-            return GoDigRadar(robot);
-        }
-    }
-
-    private string GoGetRadar(Robot robot)
-    {
-        if(robot.Pos.X == 0)
-        {
-            return Robot.Request(EntityType.RADAR);
-        }
-        else
-        {
-            return GoToHeadquarters(robot);
-        }
-    }
-
-    private string GoToHeadquarters(Robot robot)
-    {
-        return Robot.Move(new Coord(0, robot.Pos.Y));
-    }
-
-    private string GoDigRadar(Robot robot)
-    {
-        if(_game.RadarTargetPosition.Count == 0)
-        {
-            return Robot.Wait("No more radar to dig");
-        }
-
-        Coord targetPosition = _game.RadarTargetPosition.Peek();
-
-        if (robot.Pos.Distance(targetPosition) <= 1)
-        {
-            _game.RadarTargetPosition.Dequeue();
-
-            return Robot.Dig(targetPosition);
-        }
-        else
-        {
-            return Robot.Move(targetPosition);
-        }
-    }
 }
 
 /**
@@ -370,7 +353,8 @@ class Player
     }
 
     Game game;
-
+    OnGoingMissions onGoingMissions = new OnGoingMissions();
+    
     public Player()
     {
         string[] inputs;
@@ -437,7 +421,7 @@ class Player
                 }
             }
 
-            var ai = new AI(game);
+            var ai = new AI(game, onGoingMissions);
             var actions = ai.GetActions();
 
             foreach(var action in actions)

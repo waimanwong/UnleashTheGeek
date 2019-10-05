@@ -93,9 +93,11 @@ class Game
         return coordsWithOre;
     }
 
-    public void AssignMissions(IReadOnlyList<Coord> orePositions)
+    public void AssignMissions()
     {
-        for(int i=0; i < orePositions.Count; i++)
+        var orePositions = GetRevealedOrePositions();
+
+        for (int i=0; i < orePositions.Count; i++)
         {
             var currentOrePosition = orePositions[i];
 
@@ -105,8 +107,8 @@ class Game
             }
             else
             {
-                var selectedMissionIndex = i % Missions.Length;
-                Missions[selectedMissionIndex].Enqueue(currentOrePosition);
+                var selectedMissionIndex = i % (Missions.Length - 1);
+                Missions[selectedMissionIndex + 1].Enqueue(currentOrePosition);
             }
         }
     }
@@ -134,7 +136,7 @@ class Game
     private void ComputeRadarPositions()
     {
         RadarTargetPosition = new Queue<Coord>();
-        int targetX = 1;
+        int targetX = 6;
         while (targetX < Width)
         {
             int targetY = 4;
@@ -253,8 +255,7 @@ class AI
         actions.Add(DigRadars(_game.MyRobots[0]));
 
         //All others wait for Amadeusium ore to be revealed
-        var orePositions = _game.GetRevealedOrePositions();
-        _game.AssignMissions(orePositions);
+        _game.AssignMissions();
        
         for (int i = 1; i < 5; i++)
         {

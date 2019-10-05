@@ -36,7 +36,7 @@ class OnGoingMissions
         _missions = new Dictionary<int, Mission>();
     }
 
-    public bool TryGetMissionOf(Robot myRobot, out Mission onGoingMission)
+    public bool TryGetMissionOf(Robot myRobot, Game game,  out Mission onGoingMission)
     {
         var hasMission = _missions.TryGetValue(myRobot.Id, out onGoingMission);
 
@@ -45,7 +45,7 @@ class OnGoingMissions
             return false;
         }
 
-        if(onGoingMission.IsCompleted(myRobot))
+        if(onGoingMission.IsCompleted(myRobot, game))
         {
             onGoingMission = null;
             return false;
@@ -97,8 +97,6 @@ class OnGoingMissions
 
         foreach(var possiblePosition in revealedOrePositions)
         {
-            Player.Debug($"Possible ore position {possiblePosition.ToString()}");
-
             if(alreadyAsssignedPositions.Any(p => p.Distance(possiblePosition) == 0))
             {
                 //Already assigned
@@ -119,7 +117,7 @@ abstract class Mission
 {
     public abstract string GetAction(Robot robot, Game game);
 
-    public abstract bool IsCompleted(Robot robot);
+    public abstract bool IsCompleted(Robot robot, Game game);
     
 }
 
@@ -137,7 +135,7 @@ class MoveMission : Mission
         return Robot.Move(_targetPosition);
     }
 
-    public override bool IsCompleted(Robot myRobot)
+    public override bool IsCompleted(Robot myRobot, Game game)
     {
         var isCompleted = myRobot.Pos.Distance(_targetPosition) == 0;
 
@@ -155,7 +153,7 @@ class MoveMission : Mission
 class DigOreMission : Mission
 {
     public readonly Coord OrePosition;
-    private bool _hasDiggedOre = false;
+    private bool _justDig = false;
 
     public DigOreMission(Coord orePosition)
     {
@@ -171,7 +169,7 @@ class DigOreMission : Mission
 
         if (robot.Pos.Distance(OrePosition) <= 1)
         {
-            _hasDiggedOre = true;
+            _justDig = true;
             return Robot.Dig(OrePosition);
         }
         else
@@ -180,9 +178,12 @@ class DigOreMission : Mission
         }
     }
 
-    public override bool IsCompleted(Robot robot)
+    public override bool IsCompleted(Robot robot, Game game)
     {
-        return robot.IsAtHeadquerters();
+        bool noMoreOre = _justDig == true && robot.Item == EntityType.NONE;
+
+        return robot.IsAtHeadquerters() || 
+            noMoreOre;
     }
 
     public override string ToString()
@@ -203,18 +204,20 @@ class DigRadarMission: Mission
 
     public override string GetAction(Robot robot, Game game)
     {
-        if (robot.Item == EntityType.NONE)
+        switch(robot.Item)
         {
-            //Go get a radar
-            return GoGetRadar(robot, game);
-        }
-        else
-        {
-            gotRadar = true;
+            case EntityType.NONE:
+                //Go get a radar
+                return GoGetRadar(robot, game);
+            case EntityType.RADAR:
+                gotRadar = true;
 
-            //Go dig radar
-            return GoDigRadar(robot);
+                //Go dig radar
+                return GoDigRadar(robot);
+
         }
+
+        return GoToHeadquarters(robot);
     }
 
     private string GoGetRadar(Robot robot, Game game)
@@ -247,7 +250,7 @@ class DigRadarMission: Mission
         }
     }
 
-    public override bool IsCompleted(Robot myRobot)
+    public override bool IsCompleted(Robot myRobot, Game game)
     {
         return gotRadar && myRobot.Item == EntityType.NONE;
     }
@@ -467,7 +470,7 @@ class AI
         foreach(var myRobot in _game.MyRobots)
         {
             Mission onGoingMission;
-            var hasMission = _onGoingMissions.TryGetMissionOf(myRobot, out onGoingMission);
+            var hasMission = _onGoingMissions.TryGetMissionOf(myRobot, _game, out onGoingMission);
 
             if(hasMission == false)
             {

@@ -1,10 +1,6 @@
 ﻿using System;
-using System.Linq;
-using System.IO;
-using System.Text;
-using System.Collections;
 using System.Collections.Generic;
-
+using System.Linq;
 
 enum EntityType
 {
@@ -60,31 +56,63 @@ class OnGoingMissions
 
     public Mission AssignMission(Robot myRobot, Game game)
     {
-        Player.Debug($"-------------------------------");
-        Player.Debug($"AssignMission {myRobot.Id}");
+        var hasRecommendedOrePosition = TryRecommendOrePosition(game, myRobot, out Coord orePosition);
 
-        var revealedOrePositions = game.GetRevealedOrePositions();
-
-        if(myRobot.IsAtHeadquerters())
+        if (hasRecommendedOrePosition == false)
         {
-            if (game.RadarCooldown == 0)
+            var existingDigRadarMission = _missions.Values.OfType<DigRadarMission>().SingleOrDefault();
+
+            if (existingDigRadarMission == null)
             {
                 var radarPosition = game.GetRecommendRadarPosition();
-                _missions[myRobot.Id] = new DigRadar(radarPosition);
+                _missions[myRobot.Id] = new DigRadarMission(radarPosition);
             }
             else
             {
-                _missions[myRobot.Id] = new Move(new Coord(5, 3));
+                _missions[myRobot.Id] = new MoveMission(existingDigRadarMission.TargetPosition);
             }
         }
         else
         {
-            _missions[myRobot.Id] = new Move(new Coord(0, myRobot.Pos.Y));
+            _missions[myRobot.Id] = new DigOreMission(orePosition);
         }
 
         return _missions[myRobot.Id];
+
     }
 
+    private bool TryRecommendOrePosition(Game game, Robot robot, out Coord orePosition)
+    {
+        orePosition = null;
+        
+        var revealedOrePositions = game
+            .GetRevealedOrePositions()
+            .OrderBy(p => p.Distance(robot.Pos))
+            .ToList();
+
+        var alreadyAsssignedPositions = _missions
+            .Values.OfType<DigOreMission>()
+            .Select(x => x.OrePosition)
+            .ToArray();
+
+        foreach(var possiblePosition in revealedOrePositions)
+        {
+            Player.Debug($"Possible ore position {possiblePosition.ToString()}");
+
+            if(alreadyAsssignedPositions.Any(p => p.Distance(possiblePosition) == 0))
+            {
+                //Already assigned
+            }
+            else
+            {
+                orePosition = possiblePosition;
+                break;
+            }
+        }
+
+        return orePosition != null;
+
+    }
 }
 
 abstract class Mission
@@ -95,11 +123,11 @@ abstract class Mission
     
 }
 
-class Move : Mission
+class MoveMission : Mission
 {
     private readonly Coord _targetPosition;
 
-    public Move(Coord targetPosition)
+    public MoveMission(Coord targetPosition)
     {
         _targetPosition = targetPosition;
     }
@@ -117,16 +145,60 @@ class Move : Mission
 
         return isCompleted;
     }
+
+    public override string ToString()
+    {
+        return $"Move to {_targetPosition.ToString()}";
+    }
 }
 
-class DigRadar: Mission
+class DigOreMission : Mission
 {
-    private readonly Coord _targetPosition;
+    public readonly Coord OrePosition;
+    private bool _hasDiggedOre = false;
+
+    public DigOreMission(Coord orePosition)
+    {
+        OrePosition = orePosition;
+    }
+
+    public override string GetAction(Robot robot, Game game)
+    {
+        if(robot.Item == EntityType.ORE)
+        {
+            return Robot.Move(new Coord(0, robot.Pos.Y));
+        }
+
+        if (robot.Pos.Distance(OrePosition) <= 1)
+        {
+            _hasDiggedOre = true;
+            return Robot.Dig(OrePosition);
+        }
+        else
+        {
+            return Robot.Move(OrePosition);
+        }
+    }
+
+    public override bool IsCompleted(Robot robot)
+    {
+        return robot.IsAtHeadquerters();
+    }
+
+    public override string ToString()
+    {
+        return $"Dig ore at {OrePosition.ToString()}";
+    }
+}
+
+class DigRadarMission: Mission
+{
+    public readonly Coord TargetPosition;
     private bool gotRadar;
 
-    public DigRadar(Coord targetPosition)
+    public DigRadarMission(Coord targetPosition)
     {
-        _targetPosition = targetPosition;
+        TargetPosition = targetPosition;
     }
 
     public override string GetAction(Robot robot, Game game)
@@ -165,23 +237,24 @@ class DigRadar: Mission
 
     private string GoDigRadar(Robot robot)
     {
-        if (robot.Pos.Distance(_targetPosition) <= 1)
+        if (robot.Pos.Distance(TargetPosition) <= 1)
         {
-            return Robot.Dig(_targetPosition);
+            return Robot.Dig(TargetPosition);
         }
         else
         {
-            return Robot.Move(_targetPosition);
+            return Robot.Move(TargetPosition);
         }
     }
 
     public override bool IsCompleted(Robot myRobot)
     {
-        var isCompleted = gotRadar && myRobot.Item == EntityType.NONE;
+        return gotRadar && myRobot.Item == EntityType.NONE;
+    }
 
-        Player.Debug($"DigRadar Mission of {myRobot.Id} is completed:{isCompleted}");
-
-        return isCompleted;
+    public override string ToString()
+    {
+        return $"Dig radar at {TargetPosition.ToString()}";
     }
 }
 
@@ -269,11 +342,11 @@ class Game
         return new List<Coord>
         {
             new Coord(9, 7),
-            new Coord(5, 3),
-            new Coord(5, 11),
             new Coord(13,3),
             new Coord(13,11),
             new Coord(17,7),
+            new Coord(5, 3),
+            new Coord(5, 11),
             new Coord(21,3),
             new Coord(21,11),
             new Coord(25,7)
@@ -312,6 +385,11 @@ class Coord
     public override int GetHashCode()
     {
         return 31 * (31 + X) + Y;
+    }
+
+    public override string ToString()
+    {
+        return $"({X.ToString()},{Y.ToString()})";
     }
 }
 
@@ -396,8 +474,9 @@ class AI
                 onGoingMission = _onGoingMissions.AssignMission(myRobot, _game);
             }
 
-            actions.Add(onGoingMission.GetAction(myRobot, _game));
+            Player.Debug($"Robot {myRobot.Id} on mission {onGoingMission.ToString()}");
 
+            actions.Add(onGoingMission.GetAction(myRobot, _game));
         }
 
         return actions.ToArray();

@@ -60,12 +60,16 @@ class OnGoingMissions
 
     public Mission AssignMission(Robot myRobot, Game game)
     {
+        Player.Debug($"-------------------------------");
+        Player.Debug($"AssignMission {myRobot.Id}");
+
+        var revealedOrePositions = game.GetRevealedOrePositions();
+
         if(myRobot.IsAtHeadquerters())
         {
-            if(game.RadarCooldown == 0)
+            if (game.RadarCooldown == 0)
             {
                 var radarPosition = game.GetRecommendRadarPosition();
-
                 _missions[myRobot.Id] = new DigRadar(radarPosition);
             }
             else
@@ -222,6 +226,24 @@ class Game
         }
     }
 
+    public IReadOnlyList<Coord> GetRevealedOrePositions()
+    {
+        List<Coord> coordsWithOre = new List<Coord>();
+
+        for (int x = 0; x < Width; ++x)
+        {
+            for (int y = 0; y < Height; ++y)
+            {
+                if (Cells[x, y].Ore > 0)
+                {
+                    coordsWithOre.Add(new Coord(x, y));
+                }
+            }
+        }
+
+        return coordsWithOre;
+    }
+
     public Coord GetRecommendRadarPosition()
     {
         var recommendedRadarPositions = GetRecommendedRadarPositions();
@@ -253,7 +275,8 @@ class Game
             new Coord(13,11),
             new Coord(17,7),
             new Coord(21,3),
-            new Coord(21,11)
+            new Coord(21,11),
+            new Coord(25,7)
         }.ToArray();
     }
 }
@@ -436,6 +459,9 @@ class Player
             game.Traps.Clear();
             game.MyRobots.Clear();
             game.OpponentRobots.Clear();
+
+            game.RadarCooldown = radarCooldown;
+            game.TrapCooldown = trapCooldown;
 
             for (int i = 0; i < entityCount; i++)
             {

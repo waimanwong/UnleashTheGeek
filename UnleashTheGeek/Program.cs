@@ -506,6 +506,8 @@ class Game
         }
     }
 
+    private const int TrapRadius = 4;
+
     public (int, int) EstimateTrapVictims(Entity trap)
     {
         var friendVictimIds = new List<int>();
@@ -517,10 +519,10 @@ class Game
         
         foreach(var trapInChain in trapChain)
         {
-            var friendVictims = MyRobots.Where(x => x.Pos.Distance(trapInChain.Pos) <= 4).Select(x => x.Id);
+            var friendVictims = MyRobots.Where(x => x.Pos.Distance(trapInChain.Pos) <= TrapRadius + 1).Select(x => x.Id);
             friendVictimIds.AddRange(friendVictims);
 
-            var enemyVictims = OpponentRobots.Where(x => x.Pos.Distance(trapInChain.Pos) <= 4).Select(x => x.Id);
+            var enemyVictims = OpponentRobots.Where(x => x.Pos.Distance(trapInChain.Pos) < TrapRadius).Select(x => x.Id);
             opponentVictimIds.AddRange(enemyVictims);
         }
 
@@ -540,8 +542,15 @@ class Game
             var currentTrap = frontier.Dequeue();
             chain.Add(currentTrap);
 
-            var trapsInRange = Traps.Where(t => t.Pos.Distance(currentTrap.Pos) <= 4 && t.Pos.Distance(currentTrap.Pos) > 0).ToList();
-            foreach(var trapInRange in trapsInRange)
+            var trapsInRange = Traps
+                .Where(t => t.Pos.Distance(currentTrap.Pos) <= TrapRadius && t.Pos.Distance(currentTrap.Pos) > 0)
+                .ToList();
+
+            var newTrapsInRange = trapsInRange
+                .Where(t => chain.All(otherTrap => otherTrap.Pos.Distance(t.Pos) > 0))
+                .ToList();
+
+            foreach (var trapInRange in newTrapsInRange)
             {
                 frontier.Enqueue(trapInRange);
             }
@@ -675,8 +684,6 @@ class AI
             }
 
             var action = onGoingMission.GetAction(myRobot, _game);
-
-            Player.Debug($"action of {myRobot.Id}: {action}");
 
             actions.Add(action);
         }

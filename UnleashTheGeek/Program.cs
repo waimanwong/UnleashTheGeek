@@ -56,27 +56,29 @@ class OnGoingMissions
 
     public Mission AssignMission(Robot myRobot, Game game)
     {
-        var hasRecommendedOrePosition = TryRecommendOrePosition(game, myRobot, out Coord orePosition);
-
-        if (hasRecommendedOrePosition == false)
-        {
-            var existingDigRadarMission = _missions.Values.OfType<DigRadarMission>().SingleOrDefault();
-
-            if (existingDigRadarMission == null)
-            {
-                var radarPosition = game.GetRecommendRadarPosition();
-                _missions[myRobot.Id] = new DigRadarMission(radarPosition);
-            }
-            else
-            {
-                _missions[myRobot.Id] = new MoveMission(existingDigRadarMission.TargetPosition);
-            }
-        }
-        else
+        Random rand = new Random((int)DateTime.UtcNow.Ticks);
+        
+        //Mission to dig ore
+        if ( TryRecommendOrePosition(game, myRobot, out Coord orePosition))
         {
             _missions[myRobot.Id] = new DigOreMission(orePosition);
+            return _missions[myRobot.Id];
         }
 
+        //Mission to radar        
+        if (game.RadarCooldown == 0)
+        {
+            var radarPosition = game.GetRecommendRadarPosition();
+            _missions[myRobot.Id] = new DigRadarMission(radarPosition);
+
+            game.RadarCooldown = 4; //so other robot will not be assigned to dig a radar
+
+            return _missions[myRobot.Id];
+        }
+
+        //Random dig ore
+        var randomOrePosition = new Coord(rand.Next(15, 29), rand.Next(0, 14));
+        _missions[myRobot.Id] = new DigOreMission(randomOrePosition);
         return _missions[myRobot.Id];
 
     }

@@ -77,7 +77,7 @@ class OnGoingMissions
         }
 
         //Random dig ore
-        var randomOrePosition = new Coord(rand.Next(15, 29), rand.Next(0, 14));
+        var randomOrePosition = new Coord(rand.Next(15, 20), rand.Next(0, 14));
         _missions[myRobot.Id] = new DigOreMission(randomOrePosition);
         return _missions[myRobot.Id];
 
@@ -177,11 +177,11 @@ class DigOreMission : Mission
         }
         else
         {
-            //bool trapIsAvailable = game.TrapCooldown == 0;
-            //if (robot.IsAtHeadquerters() && trapIsAvailable)
-            //{
-            //    return Robot.Request(EntityType.TRAP);
-            //}
+            bool trapIsAvailable = game.TrapCooldown == 0;
+            if (robot.IsAtHeadquerters() && trapIsAvailable)
+            {
+                return Robot.Request(EntityType.TRAP);
+            }
 
             return Robot.Move(OrePosition);
         }
@@ -365,12 +365,38 @@ class Game
             new Coord(13,3),
             new Coord(13,11),
             new Coord(17,7),
-            new Coord(5, 3),
-            new Coord(5, 11),
             new Coord(21,3),
             new Coord(21,11),
-            new Coord(25,7)
+            new Coord(25,7),
+            new Coord(5, 3),
+            new Coord(5, 11),
         }.ToArray();
+    }
+
+    public void Debug()
+    {
+        var knowns = new List<Coord>();
+        var holes = new List<Coord>();
+
+        for (int x = 0; x < Width; ++x)
+        {
+            for (int y = 0; y < Height; ++y)
+            {
+                if (Cells[x, y].Known)
+                {
+                    knowns.Add(new Coord(x, y));
+                }
+                if(Cells[x, y].Hole)
+                {
+                    holes.Add(new Coord(x, y));
+                }
+            }
+        }
+        Player.Debug("****** Holes *********");
+        foreach(var coord in holes)
+        {
+            Player.Debug(coord.ToString());
+        }
     }
 }
 
@@ -481,7 +507,9 @@ class AI
     }
 
     public string[] GetActions()
-    {   
+    {
+        //_game.Debug();
+
         var actions = new List<string>();
 
         foreach(var myRobot in _game.MyRobots)

@@ -58,6 +58,15 @@ class OnGoingMissions
     {
         Random rand = new Random((int)DateTime.UtcNow.Ticks);
         
+        //Mission to dig trap
+        if(myRobot.Pos.X == 0 && game.TrapCooldown == 0)
+        {
+            _missions[myRobot.Id] = new DigTrapMission(new Coord(1, myRobot.Pos.Y));
+            game.TrapCooldown = 4;//so other robot will not be assigned to dig a trap
+
+            return _missions[myRobot.Id];
+        }
+
         //Mission to dig ore
         if ( TryRecommendOrePosition(game, myRobot, out Coord orePosition))
         {
@@ -125,6 +134,26 @@ abstract class Mission
     public abstract string GetAction(Robot robot, Game game);
 
     public abstract bool IsCompleted(Robot robot, Game game);
+
+    protected bool DoSuicide(Robot robot, Game game, out string action)
+    {
+        action = null;
+
+        var trapsInRange = game.Traps.Where(t => t.Pos.Distance(robot.Pos) <= 1).ToList();
+
+        foreach(var trap in trapsInRange)
+        {
+            var (friendVictimCount, enemyFriendCount) = game.EstimateTrapVictims(trap);
+
+            if( enemyFriendCount > friendVictimCount)
+            {
+                action = Robot.Dig(trap.Pos);
+                break;
+            }
+        }
+
+        return action != null;
+    }
     
 }
 
@@ -139,6 +168,11 @@ class MoveMission : Mission
 
     public override string GetAction(Robot robot, Game game)
     {
+        if(DoSuicide(robot, game, out var suicideAction))
+        {
+            return suicideAction;
+        }
+
         return Robot.Move(_targetPosition);
     }
 
@@ -150,6 +184,69 @@ class MoveMission : Mission
     public override string ToString()
     {
         return $"Move to {_targetPosition.ToString()}";
+    }
+}
+
+class DigTrapMission : Mission
+{
+    private readonly Coord _trapPosition;
+
+    public DigTrapMission(Coord trapPosition)
+    {
+        _trapPosition = trapPosition;
+    }
+
+    public override string GetAction(Robot robot, Game game)
+    {
+        if (DoSuicide(robot, game, out var suicideAction))
+        {
+            return suicideAction;
+        }
+
+        switch (robot.Item)
+        {
+            case EntityType.NONE:
+                return GoGetTrap(robot, game);
+            case EntityType.TRAP:
+                return GoDigTrap(robot);
+
+        }
+
+        return GoToHeadquarters(robot);
+    }
+
+    private string GoDigTrap(Robot robot)
+    {
+        if (robot.Pos.Distance(_trapPosition) <= 1)
+        {
+            return Robot.Dig(_trapPosition);
+        }
+        else
+        {
+            return Robot.Move(_trapPosition);
+        }
+    }
+    private string GoGetTrap(Robot robot, Game game)
+    {
+        if (robot.Pos.X == 0)
+        {
+            game.TrapCooldown = 4;
+            return Robot.Request(EntityType.TRAP);
+        }
+        else
+        {
+            return GoToHeadquarters(robot);
+        }
+    }
+
+    private string GoToHeadquarters(Robot robot)
+    {
+        return Robot.Move(new Coord(0, robot.Pos.Y));
+    }
+
+    public override bool IsCompleted(Robot robot, Game game)
+    {
+        return game.Traps.Any(trap => trap.Pos.Distance(_trapPosition) == 0);
     }
 }
 
@@ -165,7 +262,12 @@ class DigOreMission : Mission
 
     public override string GetAction(Robot robot, Game game)
     {
-        if(robot.Item == EntityType.ORE)
+        if (DoSuicide(robot, game, out var suicideAction))
+        {
+            return suicideAction;
+        }
+
+        if (robot.Item == EntityType.ORE)
         {
             return Robot.Move(new Coord(0, robot.Pos.Y));
         }
@@ -177,11 +279,11 @@ class DigOreMission : Mission
         }
         else
         {
-            bool trapIsAvailable = game.TrapCooldown == 0;
-            if (robot.IsAtHeadquerters() && trapIsAvailable)
-            {
-                return Robot.Request(EntityType.TRAP);
-            }
+            //bool trapIsAvailable = game.TrapCooldown == 0;
+            //if (robot.IsAtHeadquerters() && trapIsAvailable)
+            //{
+            //    return Robot.Request(EntityType.TRAP);
+            //}
 
             return Robot.Move(OrePosition);
         }
@@ -215,7 +317,12 @@ class DigRadarMission: Mission
 
     public override string GetAction(Robot robot, Game game)
     {
-        switch(robot.Item)
+        if (DoSuicide(robot, game, out var suicideAction))
+        {
+            return suicideAction;
+        }
+
+        switch (robot.Item)
         {
             case EntityType.NONE:
                 //Go get a radar
@@ -398,6 +505,51 @@ class Game
             Player.Debug(coord.ToString());
         }
     }
+
+    public (int, int) EstimateTrapVictims(Entity trap)
+    {
+        var friendVictimIds = new List<int>();
+        var opponentVictimIds = new List<int>();
+
+        //Calculate trap chain
+        var trapChain = CalculateTrapChain(trap);
+
+        
+        foreach(var trapInChain in trapChain)
+        {
+            var friendVictims = MyRobots.Where(x => x.Pos.Distance(trapInChain.Pos) <= 4).Select(x => x.Id);
+            friendVictimIds.AddRange(friendVictims);
+
+            var enemyVictims = OpponentRobots.Where(x => x.Pos.Distance(trapInChain.Pos) <= 4).Select(x => x.Id);
+            opponentVictimIds.AddRange(enemyVictims);
+        }
+
+        return (friendVictimIds.Distinct().Count(), opponentVictimIds.Distinct().Count());
+
+    }
+
+    private List<Entity> CalculateTrapChain(Entity trap)
+    {
+        var chain = new List<Entity>();
+        
+        var frontier = new Queue<Entity>();
+        frontier.Enqueue(trap);
+
+        while(frontier.Count > 0)
+        {
+            var currentTrap = frontier.Dequeue();
+            chain.Add(currentTrap);
+
+            var trapsInRange = Traps.Where(t => t.Pos.Distance(currentTrap.Pos) <= 4 && t.Pos.Distance(currentTrap.Pos) > 0).ToList();
+            foreach(var trapInRange in trapsInRange)
+            {
+                frontier.Enqueue(trapInRange);
+            }
+
+        }
+
+        return chain;
+    }
 }
 
 class Coord
@@ -522,7 +674,11 @@ class AI
                 onGoingMission = _onGoingMissions.AssignMission(myRobot, _game);
             }
 
-            actions.Add(onGoingMission.GetAction(myRobot, _game));
+            var action = onGoingMission.GetAction(myRobot, _game);
+
+            Player.Debug($"action of {myRobot.Id}: {action}");
+
+            actions.Add(action);
         }
 
         return actions.ToArray();

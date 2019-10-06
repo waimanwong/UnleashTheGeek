@@ -322,7 +322,7 @@ class Game
         {
             for (int y = 0; y < Height; ++y)
             {
-                if (Cells[x, y].Ore > 0)
+                if (Cells[x, y].Known && Cells[x, y].Ore > 0)
                 {
                     cellsWithOre.Add(new Tuple<Coord, Cell>(new Coord(x,y), Cells[x, y]));
                 }
@@ -491,8 +491,6 @@ class AI
             {
                 onGoingMission = _onGoingMissions.AssignMission(myRobot, _game);
             }
-
-            Player.Debug($"Robot {myRobot.Id} on mission {onGoingMission.ToString()}");
 
             actions.Add(onGoingMission.GetAction(myRobot, _game));
         }

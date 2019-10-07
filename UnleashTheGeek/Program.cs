@@ -36,16 +36,16 @@ class OnGoingMissions
         _missions = new Dictionary<int, Mission>();
     }
 
-    public bool TryGetMissionOf(Robot myRobot, Game game,  out Mission onGoingMission)
+    public bool TryGetMissionOf(Robot myRobot, Game game, out Mission onGoingMission)
     {
         var hasMission = _missions.TryGetValue(myRobot.Id, out onGoingMission);
 
-        if(hasMission == false)
+        if (hasMission == false)
         {
             return false;
         }
 
-        if(onGoingMission.IsCompleted(myRobot, game))
+        if (onGoingMission.IsCompleted(myRobot, game))
         {
             onGoingMission = null;
             return false;
@@ -57,18 +57,9 @@ class OnGoingMissions
     public Mission AssignMission(Robot myRobot, Game game)
     {
         Random rand = new Random((int)DateTime.UtcNow.Ticks);
-        
-        //Mission to dig trap
-        if(myRobot.Pos.X == 0 && game.TrapCooldown == 0)
-        {
-            _missions[myRobot.Id] = new DigTrapMission(new Coord(1, myRobot.Pos.Y));
-            game.TrapCooldown = 4;//so other robot will not be assigned to dig a trap
-
-            return _missions[myRobot.Id];
-        }
 
         //Mission to dig ore
-        if ( TryRecommendOrePosition(game, myRobot, out Coord orePosition))
+        if (TryRecommendOrePosition(game, myRobot, out Coord orePosition))
         {
             _missions[myRobot.Id] = new DigOreMission(orePosition);
             return _missions[myRobot.Id];
@@ -95,7 +86,7 @@ class OnGoingMissions
     private bool TryRecommendOrePosition(Game game, Robot robot, out Coord orePosition)
     {
         orePosition = null;
-        
+
         var revealedOreCells = game
             .GetRevealedOreCells()
             .OrderBy(cell => cell.Item1.Distance(robot.Pos))
@@ -106,7 +97,7 @@ class OnGoingMissions
             .Select(x => x.OrePosition)
             .ToArray();
 
-        foreach(var oreCell in revealedOreCells)
+        foreach (var oreCell in revealedOreCells)
         {
             var possiblePosition = oreCell.Item1;
             var oreCount = oreCell.Item2.Ore;
@@ -135,26 +126,6 @@ abstract class Mission
 
     public abstract bool IsCompleted(Robot robot, Game game);
 
-    protected bool DoSuicide(Robot robot, Game game, out string action)
-    {
-        action = null;
-
-        var trapsInRange = game.Traps.Where(t => t.Pos.Distance(robot.Pos) <= 1).ToList();
-
-        foreach(var trap in trapsInRange)
-        {
-            var (friendVictimCount, enemyFriendCount) = game.EstimateTrapVictims(trap);
-
-            if( enemyFriendCount > friendVictimCount)
-            {
-                action = Robot.Dig(trap.Pos);
-                break;
-            }
-        }
-
-        return action != null;
-    }
-    
 }
 
 class MoveMission : Mission
@@ -168,11 +139,6 @@ class MoveMission : Mission
 
     public override string GetAction(Robot robot, Game game)
     {
-        if(DoSuicide(robot, game, out var suicideAction))
-        {
-            return suicideAction;
-        }
-
         return Robot.Move(_targetPosition);
     }
 
@@ -184,69 +150,6 @@ class MoveMission : Mission
     public override string ToString()
     {
         return $"Move to {_targetPosition.ToString()}";
-    }
-}
-
-class DigTrapMission : Mission
-{
-    private readonly Coord _trapPosition;
-
-    public DigTrapMission(Coord trapPosition)
-    {
-        _trapPosition = trapPosition;
-    }
-
-    public override string GetAction(Robot robot, Game game)
-    {
-        if (DoSuicide(robot, game, out var suicideAction))
-        {
-            return suicideAction;
-        }
-
-        switch (robot.Item)
-        {
-            case EntityType.NONE:
-                return GoGetTrap(robot, game);
-            case EntityType.TRAP:
-                return GoDigTrap(robot);
-
-        }
-
-        return GoToHeadquarters(robot);
-    }
-
-    private string GoDigTrap(Robot robot)
-    {
-        if (robot.Pos.Distance(_trapPosition) <= 1)
-        {
-            return Robot.Dig(_trapPosition);
-        }
-        else
-        {
-            return Robot.Move(_trapPosition);
-        }
-    }
-    private string GoGetTrap(Robot robot, Game game)
-    {
-        if (robot.Pos.X == 0)
-        {
-            game.TrapCooldown = 4;
-            return Robot.Request(EntityType.TRAP);
-        }
-        else
-        {
-            return GoToHeadquarters(robot);
-        }
-    }
-
-    private string GoToHeadquarters(Robot robot)
-    {
-        return Robot.Move(new Coord(0, robot.Pos.Y));
-    }
-
-    public override bool IsCompleted(Robot robot, Game game)
-    {
-        return game.Traps.Any(trap => trap.Pos.Distance(_trapPosition) == 0);
     }
 }
 
@@ -262,11 +165,6 @@ class DigOreMission : Mission
 
     public override string GetAction(Robot robot, Game game)
     {
-        if (DoSuicide(robot, game, out var suicideAction))
-        {
-            return suicideAction;
-        }
-
         if (robot.Item == EntityType.ORE)
         {
             return Robot.Move(new Coord(0, robot.Pos.Y));
@@ -279,11 +177,11 @@ class DigOreMission : Mission
         }
         else
         {
-            //bool trapIsAvailable = game.TrapCooldown == 0;
-            //if (robot.IsAtHeadquerters() && trapIsAvailable)
-            //{
-            //    return Robot.Request(EntityType.TRAP);
-            //}
+            bool trapIsAvailable = game.TrapCooldown == 0;
+            if (robot.IsAtHeadquerters() && trapIsAvailable)
+            {
+                return Robot.Request(EntityType.TRAP);
+            }
 
             return Robot.Move(OrePosition);
         }
@@ -305,7 +203,7 @@ class DigOreMission : Mission
     }
 }
 
-class DigRadarMission: Mission
+class DigRadarMission : Mission
 {
     public readonly Coord TargetPosition;
     private bool gotRadar;
@@ -317,11 +215,6 @@ class DigRadarMission: Mission
 
     public override string GetAction(Robot robot, Game game)
     {
-        if (DoSuicide(robot, game, out var suicideAction))
-        {
-            return suicideAction;
-        }
-
         switch (robot.Item)
         {
             case EntityType.NONE:
@@ -372,7 +265,7 @@ class DigRadarMission: Mission
     {
         var positionHasTrap = game.Traps.Any(trap => trap.Pos.Distance(TargetPosition) == 0);
 
-        return (gotRadar && myRobot.Item == EntityType.NONE) || 
+        return (gotRadar && myRobot.Item == EntityType.NONE) ||
             positionHasTrap;
     }
 
@@ -433,7 +326,7 @@ class Game
             {
                 if (Cells[x, y].Known && Cells[x, y].Ore > 0)
                 {
-                    cellsWithOre.Add(new Tuple<Coord, Cell>(new Coord(x,y), Cells[x, y]));
+                    cellsWithOre.Add(new Tuple<Coord, Cell>(new Coord(x, y), Cells[x, y]));
                 }
             }
         }
@@ -493,71 +386,17 @@ class Game
                 {
                     knowns.Add(new Coord(x, y));
                 }
-                if(Cells[x, y].Hole)
+                if (Cells[x, y].Hole)
                 {
                     holes.Add(new Coord(x, y));
                 }
             }
         }
         Player.Debug("****** Holes *********");
-        foreach(var coord in holes)
+        foreach (var coord in holes)
         {
             Player.Debug(coord.ToString());
         }
-    }
-
-    private const int TrapRadius = 4;
-
-    public (int, int) EstimateTrapVictims(Entity trap)
-    {
-        var friendVictimIds = new List<int>();
-        var opponentVictimIds = new List<int>();
-
-        //Calculate trap chain
-        var trapChain = CalculateTrapChain(trap);
-
-        
-        foreach(var trapInChain in trapChain)
-        {
-            var friendVictims = MyRobots.Where(x => x.Pos.Distance(trapInChain.Pos) <= TrapRadius + 1).Select(x => x.Id);
-            friendVictimIds.AddRange(friendVictims);
-
-            var enemyVictims = OpponentRobots.Where(x => x.Pos.Distance(trapInChain.Pos) < TrapRadius).Select(x => x.Id);
-            opponentVictimIds.AddRange(enemyVictims);
-        }
-
-        return (friendVictimIds.Distinct().Count(), opponentVictimIds.Distinct().Count());
-
-    }
-
-    private List<Entity> CalculateTrapChain(Entity trap)
-    {
-        var chain = new List<Entity>();
-        
-        var frontier = new Queue<Entity>();
-        frontier.Enqueue(trap);
-
-        while(frontier.Count > 0)
-        {
-            var currentTrap = frontier.Dequeue();
-            chain.Add(currentTrap);
-
-            var trapsInRange = Traps
-                .Where(t => t.Pos.Distance(currentTrap.Pos) <= TrapRadius && t.Pos.Distance(currentTrap.Pos) > 0)
-                .ToList();
-
-            var newTrapsInRange = trapsInRange
-                .Where(t => chain.All(otherTrap => otherTrap.Pos.Distance(t.Pos) > 0))
-                .ToList();
-
-            foreach (var trapInRange in newTrapsInRange)
-            {
-                frontier.Enqueue(trapInRange);
-            }
-
-        }
-
-        return chain;
     }
 }
 
@@ -673,19 +512,17 @@ class AI
 
         var actions = new List<string>();
 
-        foreach(var myRobot in _game.MyRobots)
+        foreach (var myRobot in _game.MyRobots)
         {
             Mission onGoingMission;
             var hasMission = _onGoingMissions.TryGetMissionOf(myRobot, _game, out onGoingMission);
 
-            if(hasMission == false)
+            if (hasMission == false)
             {
                 onGoingMission = _onGoingMissions.AssignMission(myRobot, _game);
             }
 
-            var action = onGoingMission.GetAction(myRobot, _game);
-
-            actions.Add(action);
+            actions.Add(onGoingMission.GetAction(myRobot, _game));
         }
 
         return actions.ToArray();
@@ -710,7 +547,7 @@ class Player
 
     Game game;
     OnGoingMissions onGoingMissions = new OnGoingMissions();
-    
+
     public Player()
     {
         string[] inputs;
@@ -783,7 +620,7 @@ class Player
             var ai = new AI(game, onGoingMissions);
             var actions = ai.GetActions();
 
-            foreach(var action in actions)
+            foreach (var action in actions)
             {
                 Console.WriteLine(action);
             }

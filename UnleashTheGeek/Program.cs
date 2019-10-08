@@ -65,6 +65,7 @@ class OnGoingMissions
             return _missionsByRobot[myRobot.Id];
         }
 
+        //No ore
         //Mission to radar        
         if (game.RadarCooldown == 0)
         {
@@ -82,8 +83,8 @@ class OnGoingMissions
         }
 
         //Random dig ore
-        var randomOrePosition = new Coord(rand.Next(5, 9), rand.Next(0, 14));
-        _missionsByRobot[myRobot.Id] = new DigOreMission(randomOrePosition);
+        var randomPosition = new Coord((myRobot.Pos.X + 5) % game.Width, myRobot.Pos.Y);
+        _missionsByRobot[myRobot.Id] = new DigOreMission(randomPosition);
         return _missionsByRobot[myRobot.Id];
 
     }
@@ -184,19 +185,19 @@ class DigOreMission : Mission
         }
         else
         {
-            bool trapIsAvailable = game.TrapCooldown == 0;
-            if (robot.IsAtHeadquerters() && trapIsAvailable)
-            {
-                game.TrapCooldown = 4;
-                return Robot.Request(EntityType.TRAP);
-            }
+            //bool trapIsAvailable = game.TrapCooldown == 0;
+            //if (robot.IsAtHeadquerters() && trapIsAvailable)
+            //{
+            //    game.TrapCooldown = 4;
+            //    return Robot.Request(EntityType.TRAP);
+            //}
 
-            bool radarIsAvailable = game.RadarCooldown == 0;
-            if (robot.IsAtHeadquerters() && radarIsAvailable)
-            {
-                game.RadarCooldown = 4;
-                return Robot.Request(EntityType.RADAR);
-            }
+            //bool radarIsAvailable = game.RadarCooldown == 0;
+            //if (robot.IsAtHeadquerters() && radarIsAvailable)
+            //{
+            //    game.RadarCooldown = 4;
+            //    return Robot.Request(EntityType.RADAR);
+            //}
 
             return Robot.Move(OrePosition);
         }
@@ -353,7 +354,7 @@ class Game
     {
         var myRadarPositions = this.Radars.Select(radar => radar.Pos).ToList();
         myRadarPositions.AddRange(futurRadarPositions);
-
+        
         var recommendedRadarPositions = GetRecommendedRadarPositions();
         foreach (var recommendedPosition in recommendedRadarPositions)
         {

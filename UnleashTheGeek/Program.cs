@@ -29,16 +29,16 @@ class OnGoingMissions
     /// <summary>
     /// Mission by robot id
     /// </summary>
-    private Dictionary<int, Mission> _missions;
+    private Dictionary<int, Mission> _missionsByRobot;
 
     public OnGoingMissions()
     {
-        _missions = new Dictionary<int, Mission>();
+        _missionsByRobot = new Dictionary<int, Mission>();
     }
 
     public bool TryGetMissionOf(Robot myRobot, Game game, out Mission onGoingMission)
     {
-        var hasMission = _missions.TryGetValue(myRobot.Id, out onGoingMission);
+        var hasMission = _missionsByRobot.TryGetValue(myRobot.Id, out onGoingMission);
 
         if (hasMission == false)
         {
@@ -61,25 +61,30 @@ class OnGoingMissions
         //Mission to dig ore
         if (TryRecommendOrePosition(game, myRobot, out Coord orePosition))
         {
-            _missions[myRobot.Id] = new DigOreMission(orePosition);
-            return _missions[myRobot.Id];
+            _missionsByRobot[myRobot.Id] = new DigOreMission(orePosition);
+            return _missionsByRobot[myRobot.Id];
         }
 
         //Mission to radar        
         if (game.RadarCooldown == 0)
         {
-            var radarPosition = game.GetRecommendRadarPosition();
-            _missions[myRobot.Id] = new DigRadarMission(radarPosition);
+            var onGoingRadarMissionLocations = _missionsByRobot.Values
+                .OfType<DigRadarMission>()
+                .Select(m => m.TargetPosition)
+                .ToList();
+
+            var radarPosition = game.GetRecommendRadarPosition(onGoingRadarMissionLocations);
+            _missionsByRobot[myRobot.Id] = new DigRadarMission(radarPosition);
 
             game.RadarCooldown = 4; //so other robot will not be assigned to dig a radar
 
-            return _missions[myRobot.Id];
+            return _missionsByRobot[myRobot.Id];
         }
 
         //Random dig ore
-        var randomOrePosition = new Coord(rand.Next(15, 20), rand.Next(0, 14));
-        _missions[myRobot.Id] = new DigOreMission(randomOrePosition);
-        return _missions[myRobot.Id];
+        var randomOrePosition = new Coord(rand.Next(5, 9), rand.Next(0, 14));
+        _missionsByRobot[myRobot.Id] = new DigOreMission(randomOrePosition);
+        return _missionsByRobot[myRobot.Id];
 
     }
 
@@ -92,7 +97,7 @@ class OnGoingMissions
             .OrderBy(cell => cell.Item1.Distance(robot.Pos))
             .ToList();
 
-        var alreadyAsssignedPositions = _missions
+        var alreadyAsssignedPositions = _missionsByRobot
             .Values.OfType<DigOreMission>()
             .Select(x => x.OrePosition)
             .ToArray();
@@ -157,6 +162,7 @@ class DigOreMission : Mission
 {
     public readonly Coord OrePosition;
     private bool _justDig = false;
+    private bool _carryingOre = false;
 
     public DigOreMission(Coord orePosition)
     {
@@ -167,6 +173,7 @@ class DigOreMission : Mission
     {
         if (robot.Item == EntityType.ORE)
         {
+            _carryingOre = true;
             return Robot.Move(new Coord(0, robot.Pos.Y));
         }
 
@@ -180,7 +187,15 @@ class DigOreMission : Mission
             bool trapIsAvailable = game.TrapCooldown == 0;
             if (robot.IsAtHeadquerters() && trapIsAvailable)
             {
+                game.TrapCooldown = 4;
                 return Robot.Request(EntityType.TRAP);
+            }
+
+            bool radarIsAvailable = game.RadarCooldown == 0;
+            if (robot.IsAtHeadquerters() && radarIsAvailable)
+            {
+                game.RadarCooldown = 4;
+                return Robot.Request(EntityType.RADAR);
             }
 
             return Robot.Move(OrePosition);
@@ -192,7 +207,7 @@ class DigOreMission : Mission
         bool noMoreOre = _justDig == true && robot.Item == EntityType.NONE;
         bool positionHasTrap = game.Traps.Any(trap => trap.Pos.Distance(OrePosition) == 0);
 
-        return robot.IsAtHeadquerters() ||
+        return robot.IsAtHeadquerters() && _carryingOre ||
             positionHasTrap ||
             noMoreOre;
     }
@@ -334,11 +349,12 @@ class Game
         return cellsWithOre;
     }
 
-    public Coord GetRecommendRadarPosition()
+    public Coord GetRecommendRadarPosition(IEnumerable<Coord> futurRadarPositions)
     {
-        var recommendedRadarPositions = GetRecommendedRadarPositions();
         var myRadarPositions = this.Radars.Select(radar => radar.Pos).ToList();
+        myRadarPositions.AddRange(futurRadarPositions);
 
+        var recommendedRadarPositions = GetRecommendedRadarPositions();
         foreach (var recommendedPosition in recommendedRadarPositions)
         {
             var positionHasAlreadyARadar = myRadarPositions.Any(p => p.Distance(recommendedPosition) == 0);
@@ -361,15 +377,15 @@ class Game
     {
         return new List<Coord>
         {
+            new Coord(5, 3),
+            new Coord(5, 11),
             new Coord(9, 7),
             new Coord(13,3),
             new Coord(13,11),
             new Coord(17,7),
             new Coord(21,3),
             new Coord(21,11),
-            new Coord(25,7),
-            new Coord(5, 3),
-            new Coord(5, 11),
+            new Coord(25,7)
         }.ToArray();
     }
 
@@ -517,10 +533,14 @@ class AI
             Mission onGoingMission;
             var hasMission = _onGoingMissions.TryGetMissionOf(myRobot, _game, out onGoingMission);
 
+            //Player.Debug($"Player {myRobot.Id} has mission {hasMission}");
+
             if (hasMission == false)
             {
                 onGoingMission = _onGoingMissions.AssignMission(myRobot, _game);
             }
+
+            //Player.Debug($"Player {myRobot.Id}: {onGoingMission.ToString()}");
 
             actions.Add(onGoingMission.GetAction(myRobot, _game));
         }

@@ -135,6 +135,24 @@ abstract class Mission
 
     public abstract bool IsCompleted(Robot robot, Game game);
 
+    public bool DoTriggerTrap(Robot robot, Game game, out string action)
+    {
+        action = null;
+        var trapInRange = game.Traps.FirstOrDefault(t => t.Pos.Distance(robot.Pos) <= 1);
+        if (trapInRange == null)
+            return false;
+
+        var opponentRobotsCountInRange = game.OpponentRobots.Count(r => r.Pos.Distance(trapInRange.Pos) <= 1);
+        if(opponentRobotsCountInRange < 2)
+        {
+            return false;
+        }
+
+        action = Robot.Dig(trapInRange.Pos);
+
+        return true;
+    }
+
 }
 
 class MoveMission : Mission
@@ -148,6 +166,9 @@ class MoveMission : Mission
 
     public override string GetAction(Robot robot, Game game)
     {
+        if (DoTriggerTrap(robot, game, out string action))
+            return action;
+
         return Robot.Move(_targetPosition);
     }
 
@@ -175,6 +196,9 @@ class DigOreMission : Mission
 
     public override string GetAction(Robot robot, Game game)
     {
+        if (DoTriggerTrap(robot, game, out string action))
+            return action;
+
         if (robot.Item == EntityType.ORE)
         {
             _carryingOre = true;
@@ -195,12 +219,12 @@ class DigOreMission : Mission
                 return Robot.Request(EntityType.TRAP);
             }
 
-            //bool radarIsAvailable = game.RadarCooldown == 0;
-            //if (robot.IsAtHeadquerters() && radarIsAvailable)
-            //{
-            //    game.RadarCooldown = 4;
-            //    return Robot.Request(EntityType.RADAR);
-            //}
+            bool radarIsAvailable = game.RadarCooldown == 0;
+            if (robot.IsAtHeadquerters() && radarIsAvailable)
+            {
+                game.RadarCooldown = 4;
+                return Robot.Request(EntityType.RADAR);
+            }
 
             return Robot.Move(OrePosition);
         }
@@ -234,6 +258,9 @@ class DigRadarMission : Mission
 
     public override string GetAction(Robot robot, Game game)
     {
+        if (DoTriggerTrap(robot, game, out string action))
+            return action;
+
         switch (robot.Item)
         {
             case EntityType.NONE:

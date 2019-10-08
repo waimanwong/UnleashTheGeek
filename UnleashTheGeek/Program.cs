@@ -54,20 +54,16 @@ class OnGoingMissions
         return true;
     }
 
+    public Mission AssignMission(Robot robot, Mission mission)
+    {
+        _missionsByRobot[robot.Id] = mission;
+        return mission;
+    }
+
     public Mission AssignMission(Robot myRobot, Game game)
     {
-        Random rand = new Random((int)DateTime.UtcNow.Ticks);
-
-        //Mission to dig ore
-        if (TryRecommendOrePosition(game, myRobot, out Coord orePosition))
-        {
-            _missionsByRobot[myRobot.Id] = new DigOreMission(orePosition);
-            return _missionsByRobot[myRobot.Id];
-        }
-
-        //No ore
         //Mission to radar        
-        if (game.RadarCooldown == 0)
+        if (game.GetRevealedOreCells().Count <= 7 && game.RadarCooldown == 0)
         {
             var onGoingRadarMissionLocations = _missionsByRobot.Values
                 .OfType<DigRadarMission>()
@@ -79,6 +75,13 @@ class OnGoingMissions
 
             game.RadarCooldown = 4; //so other robot will not be assigned to dig a radar
 
+            return _missionsByRobot[myRobot.Id];
+        }
+
+        //Mission to dig ore
+        if (TryRecommendOrePosition(game, myRobot, out Coord orePosition))
+        {
+            _missionsByRobot[myRobot.Id] = new DigOreMission(orePosition);
             return _missionsByRobot[myRobot.Id];
         }
 
@@ -528,6 +531,19 @@ class AI
         //_game.Debug();
 
         var actions = new List<string>();
+        
+        if(_game.MyRobots.All(r => r.Pos.X == 0))
+        {
+            //Start of the game
+            var radarPosition = _game.GetRecommendRadarPosition(new List<Coord>());
+            var closestRobot = _game.MyRobots
+                .OrderBy(r => r.Pos.Distance(radarPosition))
+                .First();
+
+            _onGoingMissions.AssignMission(closestRobot, new DigRadarMission(radarPosition));
+            _game.RadarCooldown = 4;
+        }
+
 
         foreach (var myRobot in _game.MyRobots)
         {

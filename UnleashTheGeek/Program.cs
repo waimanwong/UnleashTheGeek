@@ -62,6 +62,16 @@ class OnGoingMissions
 
     public Mission AssignMission(Robot myRobot, Game game)
     {
+        if (_missionsByRobot.Values.OfType<RobotKillerMission>().Any() == false)
+        {
+            //Only one suicide mission
+            if (game.TrapCooldown == 0 && game.MyRobots.Count <= game.OpponentRobots.Count)
+            {
+                _missionsByRobot[myRobot.Id] = new RobotKillerMission();
+                return _missionsByRobot[myRobot.Id];
+            }
+        }
+
         //Mission to radar        
         if (game.GetRevealedOreCells().Count <= 7 && game.RadarCooldown == 0)
         {
@@ -153,6 +163,108 @@ abstract class Mission
         return true;
     }
 
+}
+
+
+class RobotKillerMission : Mission
+{
+    private bool _justDigged = false;
+
+    public override string GetAction(Robot robot, Game game)
+    {
+        if (robot.IsAtHeadquerters() == false)
+        {
+            return Robot.Move(new Coord(0, robot.Pos.Y));
+        }
+
+        //Do trigger ?
+        if (game.Traps.Any(t => t.Pos.Y == robot.Pos.Y))
+        {
+            var trapsMinY = game.Traps.Min(t => t.Pos.Y);
+            var trapsMaxY = game.Traps.Max(t => t.Pos.Y);
+
+            Func<Robot, bool> inRange =
+                r => (r.Pos.X <= 2 && trapsMinY <= r.Pos.Y && r.Pos.Y <= trapsMaxY) ||
+                        (r.Pos.X == 1 && trapsMinY - 1 == r.Pos.Y) ||
+                        (r.Pos.X == 1 && trapsMinY + 1 == r.Pos.Y);
+
+            var enemyInRangeCount = game.OpponentRobots.Count(inRange);
+            var mineInRangeCount = game.MyRobots.Count(inRange);
+
+            if (enemyInRangeCount >= 2 + mineInRangeCount)
+            {
+                return Robot.Dig(new Coord(1, robot.Pos.Y));
+            }
+        }
+                
+
+        if (game.TrapCooldown == 0)
+        {
+            if (robot.Item == EntityType.NONE)
+            {
+                return PickTrap(game);
+            }
+            else
+            {
+                //Carrying stuff
+                return DigToEmptyCell(robot, game);
+            }
+        }
+        else
+        {
+            if (robot.Item == EntityType.NONE)
+            {
+                return GotoSafeCell(robot, game);
+            }
+            else
+            {
+                //Carrying stuff
+                return DigToEmptyCell(robot, game);
+            }
+        }
+    }
+
+    private string DigToEmptyCell(Robot robot, Game game)
+    {
+        if(game.Traps.Any(t => t.Pos.Y == robot.Pos.Y))
+        {
+            return GotoSafeCell(robot, game);
+        }
+        else
+        {
+            return Robot.Dig(new Coord(1, robot.Pos.Y));
+        }
+    }
+
+    private string GotoSafeCell(Robot robot, Game game)
+    {
+        var unsafeYs = game.Traps.Select(t => t.Pos.Y).ToHashSet();
+
+        int selectedY = Enumerable.Range(1, game.Height - 2)
+            .Where(y => unsafeYs.Contains(y) == false)
+            .OrderBy(y => Math.Abs(robot.Pos.Y - y))
+            .FirstOrDefault();
+
+        if (selectedY == 0)
+        {
+            return Robot.Wait();
+        }
+        else
+        {
+            return Robot.Move(new Coord(0, selectedY));
+        }        
+    }
+
+    private string PickTrap(Game game)
+    {
+        game.TrapCooldown = 4;
+        return Robot.Request(EntityType.TRAP);
+    }
+
+    public override bool IsCompleted(Robot robot, Game game)
+    {
+        return game.OpponentRobots.Count < game.MyRobots.Count;
+    }
 }
 
 class MoveMission : Mission
@@ -408,12 +520,13 @@ class Game
     {
         return new List<Coord>
         {
-            new Coord(5, 3),
-            new Coord(5, 11),
+           
             new Coord(9, 7),
             new Coord(13,3),
             new Coord(13,11),
             new Coord(17,7),
+            new Coord(5, 3),
+            new Coord(5, 11),
             new Coord(21,3),
             new Coord(21,11),
             new Coord(25,7)

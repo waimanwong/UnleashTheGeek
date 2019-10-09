@@ -214,7 +214,7 @@ class RobotKillerMission : Mission
         {
             if (robot.Item == EntityType.NONE)
             {
-                return GotoSafeCell(robot, game);
+                return Robot.Wait();
             }
             else
             {

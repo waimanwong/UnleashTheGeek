@@ -62,15 +62,15 @@ class OnGoingMissions
 
     public Mission AssignMission(Robot myRobot, Game game)
     {
-        //if (_missionsByRobot.Values.OfType<RobotKillerMission>().Any() == false)
-        //{
-        //    //Only one suicide mission
-        //    if (game.TrapCooldown == 0 && game.MyRobots.Count <= game.OpponentRobots.Count)
-        //    {
-        //        _missionsByRobot[myRobot.Id] = new RobotKillerMission();
-        //        return _missionsByRobot[myRobot.Id];
-        //    }
-        //}
+        if (_missionsByRobot.Values.OfType<RobotKillerMission>().Any() == false)
+        {
+            //Only one suicide mission
+            if (game.TrapCooldown == 0 && game.MyRobots.Count <= game.OpponentRobots.Count)
+            {
+                _missionsByRobot[myRobot.Id] = new RobotKillerMission();
+                return _missionsByRobot[myRobot.Id];
+            }
+        }
 
         //Mission to radar        
         if (game.GetRevealedOreCells().Count <= 7 && game.RadarCooldown == 0)

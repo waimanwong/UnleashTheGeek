@@ -189,12 +189,12 @@ class RobotKillerMission : Mission
             Func<Robot, bool> inRange =
                 r => (r.Pos.X <= 2 && trapsMinY <= r.Pos.Y && r.Pos.Y <= trapsMaxY) ||
                         (r.Pos.X == 1 && trapsMinY - 1 == r.Pos.Y) ||
-                        (r.Pos.X == 1 && trapsMinY + 1 == r.Pos.Y);
+                        (r.Pos.X == 1 && trapsMaxY + 1 == r.Pos.Y);
 
             var enemyInRangeCount = game.OpponentRobots.Count(inRange);
             var mineInRangeCount = game.MyRobots.Count(inRange);
 
-            if (enemyInRangeCount >= 2 + mineInRangeCount)
+            if (enemyInRangeCount > mineInRangeCount)
             {
                 return Robot.Dig(new Coord(1, robot.Pos.Y), game);
             }

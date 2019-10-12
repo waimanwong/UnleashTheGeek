@@ -122,10 +122,13 @@ class OnGoingMissions
             var oreCount = oreCell.Item2.Ore;
             var assignedRobotCount = alreadyAsssignedPositions.Count(p => p.Distance(possiblePosition) == 0);
             var possiblePositionHasTrap = game.Traps.Any(trap => trap.Pos.Distance(possiblePosition) == 0);
+            var isHoleDiggedByOpponent =
+                game.IsAHole(possiblePosition) == true &&
+                game.HolesDiggedByMe.ContainsKey(possiblePosition.GetHashCode()) == false;
 
-            if (assignedRobotCount == oreCount || possiblePositionHasTrap)
+            if (assignedRobotCount == oreCount || possiblePositionHasTrap || isHoleDiggedByOpponent)
             {
-                //Already assigned
+                //ignore this
             }
             else
             {
@@ -158,7 +161,7 @@ abstract class Mission
             return false;
         }
 
-        action = Robot.Dig(trapInRange.Pos);
+        action = Robot.Dig(trapInRange.Pos, game);
 
         return true;
     }
@@ -193,7 +196,7 @@ class RobotKillerMission : Mission
 
             if (enemyInRangeCount >= 2 + mineInRangeCount)
             {
-                return Robot.Dig(new Coord(1, robot.Pos.Y));
+                return Robot.Dig(new Coord(1, robot.Pos.Y), game);
             }
         }
                 
@@ -232,7 +235,7 @@ class RobotKillerMission : Mission
         }
         else
         {
-            return Robot.Dig(new Coord(1, robot.Pos.Y));
+            return Robot.Dig(new Coord(1, robot.Pos.Y), game);
         }
     }
 
@@ -320,7 +323,7 @@ class DigOreMission : Mission
         if (robot.Pos.Distance(OrePosition) <= 1)
         {
             _justDig = true;
-            return Robot.Dig(OrePosition);
+            return Robot.Dig(OrePosition, game);
         }
         else
         {
@@ -331,13 +334,6 @@ class DigOreMission : Mission
                 return Robot.Request(EntityType.TRAP);
             }
 
-            bool radarIsAvailable = game.RadarCooldown == 0;
-            if (robot.IsAtHeadquerters() && radarIsAvailable)
-            {
-                game.RadarCooldown = 4;
-                return Robot.Request(EntityType.RADAR);
-            }
-
             return Robot.Move(OrePosition);
         }
     }
@@ -346,10 +342,12 @@ class DigOreMission : Mission
     {
         bool noMoreOre = _justDig == true && robot.Item == EntityType.NONE;
         bool positionHasTrap = game.Traps.Any(trap => trap.Pos.Distance(OrePosition) == 0);
+        var opponentHasDiggedAHole = game.OpponentHasDiggedAHole(OrePosition);
 
         return robot.IsAtHeadquerters() && _carryingOre ||
             positionHasTrap ||
-            noMoreOre;
+            noMoreOre ||
+            opponentHasDiggedAHole;
     }
 
     public override string ToString()
@@ -360,7 +358,7 @@ class DigOreMission : Mission
 
 class DigRadarMission : Mission
 {
-    public readonly Coord TargetPosition;
+    public Coord TargetPosition;
     private bool gotRadar;
 
     public DigRadarMission(Coord targetPosition)
@@ -382,7 +380,7 @@ class DigRadarMission : Mission
                 gotRadar = true;
 
                 //Go dig radar
-                return GoDigRadar(robot);
+                return GoDigRadar(robot, game);
 
         }
 
@@ -407,11 +405,19 @@ class DigRadarMission : Mission
         return Robot.Move(new Coord(0, robot.Pos.Y));
     }
 
-    private string GoDigRadar(Robot robot)
+    private string GoDigRadar(Robot robot, Game game)
     {
         if (robot.Pos.Distance(TargetPosition) <= 1)
         {
-            return Robot.Dig(TargetPosition);
+            var opponentHasDiggedAHole = game.OpponentHasDiggedAHole(TargetPosition);
+            var positionHasTrap = game.Traps.Any(trap => trap.Pos.Distance(TargetPosition) == 0);
+
+            if (opponentHasDiggedAHole || positionHasTrap)
+            {
+                //ChangePosition
+                TargetPosition = new Coord(TargetPosition.X - 1, TargetPosition.Y);
+            }
+            return Robot.Dig(TargetPosition, game);
         }
         else
         {
@@ -421,10 +427,9 @@ class DigRadarMission : Mission
 
     public override bool IsCompleted(Robot myRobot, Game game)
     {
-        var positionHasTrap = game.Traps.Any(trap => trap.Pos.Distance(TargetPosition) == 0);
+        var justDroppedARadar = gotRadar && myRobot.Item == EntityType.NONE;
 
-        return (gotRadar && myRobot.Item == EntityType.NONE) ||
-            positionHasTrap;
+        return justDroppedARadar;
     }
 
     public override string ToString()
@@ -450,6 +455,8 @@ class Game
     public List<Entity> Radars { get; set; }
     public List<Entity> Traps { get; set; }
 
+    public Dictionary<int,Coord> HolesDiggedByMe { get; private set; }
+
     public Game(int width, int height)
     {
         Width = width;
@@ -459,6 +466,7 @@ class Game
         Cells = new Cell[width, height];
         Radars = new List<Entity>();
         Traps = new List<Entity>();
+        HolesDiggedByMe = new Dictionary<int, Coord>();
 
         InitializeCellContent();
     }
@@ -516,6 +524,17 @@ class Game
         return recommendedRadarPositions[0];
     }
 
+    public void RegisterMyHole(Coord holeCoord)
+    {
+        HolesDiggedByMe[holeCoord.GetHashCode()] = holeCoord;
+    }
+
+    public bool OpponentHasDiggedAHole(Coord position)
+    {
+        return IsAHole(position) &&
+            HolesDiggedByMe.ContainsKey(position.GetHashCode()) == false;
+    }
+
     private Coord[] GetRecommendedRadarPositions()
     {
         return new List<Coord>
@@ -536,27 +555,57 @@ class Game
     public void Debug()
     {
         var knowns = new List<Coord>();
-        var holes = new List<Coord>();
+        var unknowns = new List<Coord>();
+
+        var opponentHoles = new List<Coord>();
 
         for (int x = 0; x < Width; ++x)
         {
             for (int y = 0; y < Height; ++y)
             {
+                var coord = new Coord(x, y);
+
+                if(Cells[x,y].Hole)
+                {
+                    if(HolesDiggedByMe.ContainsKey(coord.GetHashCode()) == false)
+                    {
+                        opponentHoles.Add(coord);
+                    }
+                }
+
                 if (Cells[x, y].Known)
                 {
-                    knowns.Add(new Coord(x, y));
+                    knowns.Add(coord);
                 }
-                if (Cells[x, y].Hole)
+                else
                 {
-                    holes.Add(new Coord(x, y));
+                    unknowns.Add(coord);
                 }
             }
         }
-        Player.Debug("****** Holes *********");
-        foreach (var coord in holes)
-        {
-            Player.Debug(coord.ToString());
-        }
+
+        //Player.Debug("****** Holes *********");
+        //foreach (var coord in holes)
+        //{
+        //    Player.Debug($"Hole {coord.ToString()}");
+        //}
+
+        //Player.Debug("****** Knowns *********");
+        //foreach (var coord in knowns)
+        //{
+        //    Player.Debug($"Knwon {coord.ToString()}");
+        //}
+
+        //Player.Debug("****** UnKnowns *********");
+        //foreach (var coord in unknowns)
+        //{
+        //    Player.Debug($"Unknown {coord.ToString()}");
+        //}
+    }
+
+    public bool IsAHole(Coord possiblePosition)
+    {
+        return Cells[possiblePosition.X, possiblePosition.Y].Hole == true;
     }
 }
 
@@ -639,8 +688,10 @@ class Robot : Entity
         return $"MOVE {pos.X} {pos.Y} {message}";
     }
 
-    public static string Dig(Coord pos, string message = "")
+    public static string Dig(Coord pos, Game game, string message = "")
     {
+        game.RegisterMyHole(pos);
+
         return $"DIG {pos.X} {pos.Y} {message}";
     }
 
@@ -690,14 +741,14 @@ class AI
             Mission onGoingMission;
             var hasMission = _onGoingMissions.TryGetMissionOf(myRobot, _game, out onGoingMission);
 
-            //Player.Debug($"Player {myRobot.Id} has mission {hasMission}");
+            Player.Debug($"Player {myRobot.Id} has mission {hasMission}");
 
             if (hasMission == false)
             {
                 onGoingMission = _onGoingMissions.AssignMission(myRobot, _game);
             }
 
-            //Player.Debug($"Player {myRobot.Id}: {onGoingMission.ToString()}");
+            Player.Debug($"Player {myRobot.Id}: {onGoingMission.ToString()}");
 
             actions.Add(onGoingMission.GetAction(myRobot, _game));
         }

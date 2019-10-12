@@ -300,7 +300,7 @@ class MoveMission : Mission
 
 class DigOreMission : Mission
 {
-    public readonly Coord OrePosition;
+    public Coord OrePosition;
     private bool _justDig = false;
     private bool _carryingOre = false;
 
@@ -334,6 +334,18 @@ class DigOreMission : Mission
                 return Robot.Request(EntityType.TRAP);
             }
 
+            bool radarIsAvailable = game.RadarCooldown == 0;
+            if (robot.IsAtHeadquerters() && radarIsAvailable)
+            {
+                game.RadarCooldown = 4;
+                return Robot.Request(EntityType.RADAR);
+            }
+
+            var opponentHasDiggedAHole = game.OpponentHasDiggedAHole(OrePosition);
+            if (opponentHasDiggedAHole)
+            {
+                OrePosition = new Coord(OrePosition.X, OrePosition.Y + 1);
+            }
             return Robot.Move(OrePosition);
         }
     }
@@ -342,12 +354,10 @@ class DigOreMission : Mission
     {
         bool noMoreOre = _justDig == true && robot.Item == EntityType.NONE;
         bool positionHasTrap = game.Traps.Any(trap => trap.Pos.Distance(OrePosition) == 0);
-        var opponentHasDiggedAHole = game.OpponentHasDiggedAHole(OrePosition);
-
+        
         return robot.IsAtHeadquerters() && _carryingOre ||
             positionHasTrap ||
-            noMoreOre ||
-            opponentHasDiggedAHole;
+            noMoreOre;
     }
 
     public override string ToString()
@@ -741,14 +751,14 @@ class AI
             Mission onGoingMission;
             var hasMission = _onGoingMissions.TryGetMissionOf(myRobot, _game, out onGoingMission);
 
-            Player.Debug($"Player {myRobot.Id} has mission {hasMission}");
+            //Player.Debug($"Player {myRobot.Id} has mission {hasMission}");
 
             if (hasMission == false)
             {
                 onGoingMission = _onGoingMissions.AssignMission(myRobot, _game);
             }
 
-            Player.Debug($"Player {myRobot.Id}: {onGoingMission.ToString()}");
+            //Player.Debug($"Player {myRobot.Id}: {onGoingMission.ToString()}");
 
             actions.Add(onGoingMission.GetAction(myRobot, _game));
         }

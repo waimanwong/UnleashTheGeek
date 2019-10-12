@@ -346,7 +346,7 @@ class DigOreMission : Mission
             {
                 OrePosition = new Coord(OrePosition.X, OrePosition.Y + 1);
             }
-            return Robot.Move(OrePosition);
+            return Robot.Move(new Coord( OrePosition.X - 1, OrePosition.Y));
         }
     }
 

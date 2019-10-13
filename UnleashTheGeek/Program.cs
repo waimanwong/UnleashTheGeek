@@ -173,6 +173,8 @@ class RobotKillerMission : Mission
 {
     private bool _justDigged = false;
 
+    private int deathLineX = 1;
+
     public override string GetAction(Robot robot, Game game)
     {
         if (robot.IsAtHeadquerters() == false)
@@ -187,16 +189,16 @@ class RobotKillerMission : Mission
             var trapsMaxY = game.Traps.Max(t => t.Pos.Y);
 
             Func<Robot, bool> inRange =
-                r => (r.Pos.X <= 2 && trapsMinY <= r.Pos.Y && r.Pos.Y <= trapsMaxY) ||
-                        (r.Pos.X == 1 && trapsMinY - 1 == r.Pos.Y) ||
-                        (r.Pos.X == 1 && trapsMaxY + 1 == r.Pos.Y);
+                r => ( deathLineX - 1 <= r.Pos.X && r.Pos.X <= deathLineX + 1 && trapsMinY <= r.Pos.Y && r.Pos.Y <= trapsMaxY) ||
+                        (r.Pos.X == deathLineX && trapsMinY - 1 == r.Pos.Y) ||
+                        (r.Pos.X == deathLineX && trapsMaxY + 1 == r.Pos.Y);
 
             var enemyInRangeCount = game.OpponentRobots.Count(inRange);
             var mineInRangeCount = game.MyRobots.Count(inRange);
 
             if (enemyInRangeCount > mineInRangeCount)
             {
-                return Robot.Dig(new Coord(1, robot.Pos.Y), game);
+                return Robot.Dig(new Coord(deathLineX, robot.Pos.Y), game);
             }
         }
                 
@@ -229,13 +231,13 @@ class RobotKillerMission : Mission
 
     private string DigToEmptyCell(Robot robot, Game game)
     {
-        if(game.Traps.Any(t => t.Pos.Y == robot.Pos.Y))
+        if(game.Traps.Any(t => t.Pos.Y == robot.Pos.Y && t.Pos.X == deathLineX))
         {
             return GotoSafeCell(robot, game);
         }
         else
         {
-            return Robot.Dig(new Coord(1, robot.Pos.Y), game);
+            return Robot.Dig(new Coord(deathLineX, robot.Pos.Y), game);
         }
     }
 
@@ -260,8 +262,7 @@ class RobotKillerMission : Mission
 
     private string PickTrap(Game game)
     {
-        game.TrapCooldown = 4;
-        return Robot.Request(EntityType.TRAP);
+        return Robot.Request(EntityType.TRAP, game);
     }
 
     public override bool IsCompleted(Robot robot, Game game)
@@ -329,26 +330,39 @@ class DigOreMission : Mission
         {
             bool trapIsAvailable = game.TrapCooldown == 0;
             if (robot.IsAtHeadquerters() && trapIsAvailable)
-            {
-                game.TrapCooldown = 4;
-                return Robot.Request(EntityType.TRAP);
+            {   
+                return Robot.Request(EntityType.TRAP, game);
             }
 
             bool radarIsAvailable = game.RadarCooldown == 0;
             if (robot.IsAtHeadquerters() && radarIsAvailable)
-            {
-                game.RadarCooldown = 4;
-                return Robot.Request(EntityType.RADAR);
+            {   
+                return Robot.Request(EntityType.RADAR, game);
             }
 
             var opponentHasDiggedAHole = game.OpponentHasDiggedAHole(OrePosition);
             if (opponentHasDiggedAHole)
             {
-                OrePosition = new Coord(OrePosition.X, OrePosition.Y + 1);
+                OrePosition = GetSafePositionAround(OrePosition, game);
             }
             return Robot.Move(new Coord( OrePosition.X - 1, OrePosition.Y));
         }
     }
+
+    private Coord GetSafePositionAround(Coord position, Game game)
+    {
+        var newY = position.Y;
+        if(newY + 1 == game.Height)
+        {
+            newY = position.Y - 1;
+        }
+        else
+        {
+            newY = position.Y + 1;
+        }
+        return new Coord(position.X, newY);     
+    }
+
 
     public override bool IsCompleted(Robot robot, Game game)
     {
@@ -401,8 +415,7 @@ class DigRadarMission : Mission
     {
         if (robot.Pos.X == 0)
         {
-            game.RadarCooldown = 4;
-            return Robot.Request(EntityType.RADAR);
+            return Robot.Request(EntityType.RADAR, game);
         }
         else
         {
@@ -705,8 +718,18 @@ class Robot : Entity
         return $"DIG {pos.X} {pos.Y} {message}";
     }
 
-    public static string Request(EntityType item, string message = "")
+    public static string Request(EntityType item, Game game, string message = "")
     {
+        if(item == EntityType.RADAR)
+        {
+            game.RadarCooldown = 4;
+        }
+        
+        if(item == EntityType.TRAP)
+        {
+            game.TrapCooldown = 4;
+        }
+
         return $"REQUEST {item.ToString()} {message}";
     }
 

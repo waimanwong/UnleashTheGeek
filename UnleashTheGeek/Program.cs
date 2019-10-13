@@ -267,7 +267,8 @@ class RobotKillerMission : Mission
 
     public override bool IsCompleted(Robot robot, Game game)
     {
-        return game.OpponentRobots.Count < game.MyRobots.Count;
+        return game.OpponentRobots.Count(r => r.IsAlive()) < 
+                game.MyRobots.Count(r => r.IsAlive());
     }
 }
 
@@ -696,9 +697,9 @@ class Robot : Entity
     {
     }
 
-    bool IsDead()
+    public bool IsAlive()
     {
-        return Pos.Equals(Coord.NONE);
+        return Pos.Equals(Coord.NONE) == false;
     }
 
     public static string Wait(string message = "")

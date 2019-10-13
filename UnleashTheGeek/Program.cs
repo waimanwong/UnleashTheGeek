@@ -267,8 +267,9 @@ class RobotKillerMission : Mission
 
     public override bool IsCompleted(Robot robot, Game game)
     {
-        return game.OpponentRobots.Count(r => r.IsAlive()) < 
-                game.MyRobots.Count(r => r.IsAlive());
+        return false;
+        //return game.OpponentRobots.Count(r => r.IsAlive()) < 
+        //        game.MyRobots.Count(r => r.IsAlive());
     }
 }
 
